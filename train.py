@@ -1,18 +1,19 @@
-import torch.nn.functional as F
-import numpy as np
-import torch.nn as nn
 import torch
+import numpy as np
 import pickle
 import random
 import os
 import argparse
-import wandb
+
+
 
 from dataset import *
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from transformers import AdamW, get_linear_schedule_with_warmup, AutoModelForMaskedLM, AutoTokenizer, DataCollatorWithPadding
 
+#set 'PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512' windows
+#export 'PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512' linux
 
 def seed_everything(seed):
     random.seed(seed)
@@ -30,14 +31,13 @@ def get_config():
     """init options"""
     parser.add_argument("--seed", type=int, default=42, help="random seed (default: 42)")
     parser.add_argument("--model", type=str, default="bert-base-uncased", help="(default: bert-base-uncased)")
-    parser.add_argument("--wandb_name", type=str, default="BERT-HLSQG", help="(default: )")
 
     """train options"""
     parser.add_argument("--train_data_path", type=str, default="./data/squad_nqg/train.json", help="(default: ./data/squad_nqg/train.json)")
     parser.add_argument("--train_pickle_path", type=str, default="./squad_train.pickle", help="(default: squad_train.pickle)")
-    parser.add_argument("--num_train_epochs", type=int, default=10, help="(default: 5)")
-    parser.add_argument("--learning_rate", type=float, default=5e-5, help="learning rage (default: 5e-5)")
-    parser.add_argument("--batch_size", type=int, default=32, help="(default: 32)")
+    parser.add_argument("--num_train_epochs", type=int, default=20, help="(default: 10)")
+    parser.add_argument("--learning_rate", type=float, default=5e-5, help="learning rate (default: 5e-5)")
+    parser.add_argument("--batch_size", type=int, default=4, help="(default: 32)")
 
     # not frequently used
     parser.add_argument("--adam_epsilon", type=float, default=1e-8, help="(default: )")
@@ -48,8 +48,9 @@ def get_config():
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1, help="(default: )")
 
     # parser.add_argument("", type=, default=, help="(default: )")
-
+    
     args = parser.parse_args()
+    args.train_pickle_path="./modified_train.pickle"
     return args
 
 
@@ -61,6 +62,7 @@ def prepare_train_dataset(args, device, tokenizer):
         print("*** train file already exist!")
         with open(args.train_pickle_path, "rb") as f:
             example_list = pickle.load(f)
+            #~2.5 gb file, takes around 2 minutes
         print("*** finished to load train pickle file!")
     else:
         example_list = load_dataset.make_data_pickle(args.train_data_path, args.train_pickle_path)
@@ -96,15 +98,7 @@ def prepare_train_dataset(args, device, tokenizer):
 def train(args):
     seed_everything(args.seed)
 
-    # wandb
-    config = {
-        "datatype": args.train_pickle_path,
-        "pretrained_model": args.model,
-        "lr": args.learning_rate,
-        "batch_size": args.batch_size,
-        "num_train_epochs": args.num_train_epochs,
-    }
-    wandb.init(project="BERT-HLSQG", entity="minji913", name=args.wandb_name, group=args.model, config=config)
+
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Current cuda device:", torch.cuda.current_device())
@@ -120,7 +114,7 @@ def train(args):
     model.resize_token_embeddings(tokenizer.vocab_size + added_token_num)
 
     # Multi-GPU
-    model = nn.DataParallel(model)
+    #model = torch.nn.DataParallel(model)
 
     t_total, train_dataloader = prepare_train_dataset(args, device, tokenizer)
     print(f"***t_total: {t_total}, len train_dataloader: {len(train_dataloader)}")
@@ -150,12 +144,11 @@ def train(args):
             optimizer.step()
             optimizer.zero_grad()
             train_loader.set_description("Loss %.04f | step %d" % (loss.mean(), j))
-            wandb.log({"train_loss": loss.mean()})
         torch.save(model.state_dict(), f"model_weights_{epoch}_{eveloss}.pth")
         print("epoch " + str(epoch) + " : " + str(eveloss))
-        wandb.log({"epoch_loss": eveloss})
 
 
 if __name__ == "__main__":
     args = get_config()
+    torch.cuda.empty_cache()
     train(args)

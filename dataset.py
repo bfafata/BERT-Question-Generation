@@ -23,7 +23,7 @@ class LoadDataset:
 
         example_list = []
 
-        for d in tqdm(data[: len(data)], desc="***making pickle file...: "):
+        for d in tqdm(data, desc="***making pickle file...: "):
             example_pair = dict()
             target_text = d["question"]
             answer_start = d["answers"][0]["answer_start"]
@@ -69,7 +69,7 @@ class LoadDataset:
             sentences.extend(list(examples.keys()))
             labels.extend(list(examples.values()))
 
-        # print(len(train_sentences), len(train_label))
+        print(len(sentences), len(labels))
         return sentences, labels
 
     def tokenized_dataset(self, data):  # data: 문장 list
